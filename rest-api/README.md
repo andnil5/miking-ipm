@@ -7,9 +7,8 @@ This file contains a sketch of the IPM REST-API between the client and the serve
 The response to all requests include a data object with one or several models where each model has the following attributes:
 - <code>type</code> - Ex: "dfa", "nfa", "graph".
 - <code>id</code> - A unique number used for model specific requests.
-- <code>model</code> - The model in dot-syntax.
-- <code>simulation</code> - An object with simulation information (only included for models with simulation).
-
+- <code>model</code> - The data needed for the model. Ex: { "nodes" : [], "edges" : []} for a graph.
+- <code>simulation</code> - An object with simulation information (only included for models with simulation). Includes five configuration steps at a time, or as many as there are left.
 
 ## INIT
 
@@ -24,20 +23,55 @@ The following request retrieves all the models defined in the user-specified <co
     "data" : {
         "models" : [
             {
-                "type" : "nfa",
+                "type" : "dfa",
                 "id" : 0,
-                "model" : "digraph {rankdir=LR;node [style=filled fillcolor=white shape=circle];
-    start[fontcolor=white color=white];a[shape=doublecircle fillcolor=darkgreen fontcolor = white];b[  ];c[  ];d[  ];e[  ];f[  ];start -> a [label=start ];a -> b [label=1 color=darkgreen style=bold];b -> c [label=0 color=black style=dashed];c -> d [label=2 color=black style=dashed];c -> e [label=2 color=black style=dashed];d -> a [label=1 color=black style=dashed];e -> f [label=1 color=black style=dashed];}",
+                "model" : {
+                   "states" : [
+                      {"name":"s0", "displayName": "start state" }
+                      ,{"name":"s1", "displayName": "s1" }
+                      ,{"name":"s2", "displayName": "s2" }
+                      ,{"name":"s3", "displayName": "accept state" }
+                    ],
+                    "transitions" : [
+                      {"from": "s0", "to": "s1", "label": "1"}
+                      ,{"from": "s1", "to": "s1", "label": "1"}
+                      ,{"from": "s1", "to": "s2", "label": "0"}
+                      ,{"from": "s2", "to": "s1", "label": "1"}
+                      ,{"from": "s2", "to": "s3", "label": "0"}
+                      ,{"from": "s3", "to": "s1", "label": "1"}
+                    ], 
+                    "startState" : "s0",
+                    "acceptedStates" : ["s3"]
+                },
                 "simulation" : {
-                    "status" : "OK",
+                    "input" : ["1","0","0","1","0","1","0"],
+                    "configurations" : [
+                    {"state": "s0","status": "OK"}
+                    ,{"state": "s1","status": "OK"}
+                    ,{"state": "s2","status": "OK"}
+                    ,{"state": "s3","status": "OK"}
+                    ,{"state": "s1","status": "OK"}
+                    ],
                     "current-input-index" : 0,
-                    "input" : ["start", "1", "0", "2", "2"]
                 }
-            },
+              }
             {
-                "type" : "graph",
-                "id" : 1,
-                "model" : "graph {rankdir=TB;node [style=filled fillcolor=white shape=circle];4[];3[];2[];1[];4 -- 3 [];3 -- 1 [];3 -- 2 [label=a ];2 -- 1 [label=g ];}"
+              "type" : "graph",
+              "id" : 1,
+              "model" : {
+                "nodes" : [
+                {"name":"4", "displayName": "4" }
+                ,{"name":"3", "displayName": "3" }
+                ,{"name":"2", "displayName": "2" }
+                ,{"name":"1", "displayName": "1" }
+                ],
+                "edges" : [
+                {"from": "4", "to": "3", "label": ""}
+                ,{"from": "3", "to": "1", "label": ""}
+                ,{"from": "3", "to": "2", "label": ""}
+                ,{"from": "2", "to": "1", "label": ""}
+                ] 
+              }
             }
         ]
     }
@@ -45,14 +79,13 @@ The following request retrieves all the models defined in the user-specified <co
 ```
 
 #### REQUEST - UPDATE INPUT
-This request updates the input for a specific model and reset the model to its initial state. Note: Only valid for models with input.
+This request updates the input for a specific model and reset the model to its initial state (input index 0). Note: Only valid for models with input.
 
 ```js
-url: BASE_URL + "/init/input",
+url: BASE_URL + "/init/input/id",
 method: "POST",
 headers: {"Content-Type": "application/json"},
 body: {
-  "id": {model-id}, // Might be better to have the id as a parameter in the url?
   "input" : {new-input}
 }
 ```
@@ -60,7 +93,6 @@ body: {
 ###### Sample request body
 ```js
 body: {
-  "id": 0,
   "input" : "1000"
 }
 ```
@@ -69,45 +101,53 @@ body: {
 ```json
 {
     "data" : {
-        "type" : "nfa",
         "id" : 0,
-        "model" : "digraph {rankdir=LR;node [style=filled fillcolor=white shape=circle];start[fontcolor=white color=white];a[shape=doublecircle];b[  ];c[  ];d[  ];e[  ];f[  ];start -> a [label=start style=solid];a -> b [label=1 ];b -> c [label=0 ];c -> d [label=2 ];c -> e [label=2 ];d -> a [label=1 ];e -> f [label=1 ];}",
         "simulation" : {
-            "status" : "OK",
-            "current-input-index" : 0,
-            "input" : ["start", "1", "0", "0", "0"]
-        }
+          "input" : ["1","0","0","0","1","0"],
+          "configurations" : [
+          {"state": "s0","status": "OK"}
+          ,{"state": "s1","status": "OK"}
+          ,{"state": "s2","status": "OK"}
+          ,{"state": "s3","status": "OK"}
+          ,{"state": "s0","status": "OK"}
+          ],
+          "current-input-index" : 0,
+      }
     }
 }
 ```
 
 ## TRANSITION
 The requests under this category are responsible for changing the state of a specific model. The state transition function called when handling the request is specialized and specific for each model.
-Ex: In the case of a DFA/NFA, the next state refers to the next configuration.
+Ex: In the case of a DFA/NFA, the next state refers to the next configuration. The _steps_ parameter refers to the number of simulation steps have already been displayed.
 
 #### REQUEST - NEXT STATE
 
-<code>GET: BASE_URL + "/transition/next?id={model-id}"</code>  
+<code>GET: BASE_URL + "/transition/next?id={model-id}&steps={steps-taken}"</code>  
 
 #### REQUEST - PREVIOUS STATE
 
-<code>GET: BASE_URL + "/transition/previous?id={model-id}"</code>
+<code>GET: BASE_URL + "/transition/previous??id={model-id}&steps={steps-taken}"</code>
 
 ###### Sample request
-<code>GET: BASE_URL + "/transition/next?id=0"</code>
+<code>GET: BASE_URL + "/transition/next?id=0&steps=0"</code>
 
 ###### Sample output
 ```json
 {
     "data" : {
-        "type" : "nfa",
         "id" : 0,
-        "model" : "digraph {rankdir=LR;node [style=filled fillcolor=white shape=circle];start[fontcolor=white color=white];a[shape=doublecircle];b[fillcolor=darkgreen fontcolor = white];c[  ];d[  ];e[  ];f[  ];start -> a [label=start ];a -> b [label=1 color=darkgreen style=bold];b -> c [label=0 color=black style=dashed];c -> d [label=2 color=black style=dashed];c -> e [label=2 color=black style=dashed];d -> a [label=1 color=black style=dashed];e -> f [label=1 color=black style=dashed];}",
         "simulation" : {
-            "status" : "OK",
-            "current-input-index" : 1,
-            "input" : ["start", "1", "0", "0", "0"]
-        }
+          "input" : ["1","0","0","0","1","0","1","1","1","0","1"],
+          "configurations" : [
+          {"state": "s0","status": "OK"}
+          ,{"state": "s1","status": "OK"}
+          ,{"state": "s2","status": "OK"}
+          ,{"state": "s3","status": "OK"}
+          ,{"state": "s1","status": "OK"}
+          ],
+          "current-input-index" : 5,
+      }
     }
 }
 ```
@@ -139,7 +179,7 @@ body: {
 }
 ```
 
-The <code>values</code> must be an array of objects with two attributes <code>node-id</code> and <code>properties</code>. Valid attributes for the <code>properties</code> are "label" (to be extended).
+The <code>values</code> must be an array of objects with two attributes <code>node-id</code> and <code>properties</code>. Valid attributes for the <code>properties</code> are "label" (to be extended). This is relevant for all models that use nodes/vertices/states.
 
 ###### Sample request body
 
@@ -163,9 +203,22 @@ body: {
     "data" : {
         "type" : "graph",
         "id" : 1,
-        "model" : "graph {rankdir=TB;node [style=filled fillcolor=white shape=circle];4[label=Initial];3[];2[];1[];4 -- 3 [];3 -- 1 [];3 -- 2   [label=a];2 -- 1 [label=g];}"
-        }
+        "model" :  {
+          "nodes" : [
+            {"name":"4", "displayName": "Initial" }
+            ,{"name":"3", "displayName": "3" }
+            ,{"name":"2", "displayName": "2" }
+            ,{"name":"1", "displayName": "1" }
+          ],
+          "edges" : [
+            {"from": "4", "to": "3", "label": ""}
+            ,{"from": "3", "to": "1", "label": ""}
+            ,{"from": "3", "to": "2", "label": "a"}
+            ,{"from": "2", "to": "1", "label": "g"}
+          ] 
+      }
     }
+    
 }
 ```
 
